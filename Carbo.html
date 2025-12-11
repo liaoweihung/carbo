@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carboplatin 劑量計算器 (肥胖校正版)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 500px; }
+        h2 { text-align: center; color: #2c3e50; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 15px;}
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group { margin-bottom: 15px; }
+        .full-width { grid-column: 1 / -1; }
+        label { display: block; margin-bottom: 5px; color: #555; font-weight: 600; font-size: 0.9rem;}
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; transition: border 0.3s; }
+        input:focus { border-color: #007bff; outline: none; }
+        button { width: 100%; padding: 14px; background-color: #007bff; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: background 0.3s; }
+        button:hover { background-color: #0056b3; }
+        
+        .result-box { margin-top: 25px; background-color: #f8f9fa; border-radius: 8px; padding: 20px; border-left: 5px solid #007bff; display: none; }
+        .result-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.95rem; color: #444; }
+        .highlight-row { background-color: #e3f2fd; margin: 5px -10px; padding: 5px 10px; border-radius: 4px; color: #0d47a1; font-size: 0.85rem;}
+        .final-dose-row { margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+        .final-label { font-size: 1.1rem; font-weight: bold; color: #333; }
+        .final-value { font-size: 1.5rem; font-weight: bold; color: #d9534f; }
+        
+        .disclaimer { font-size: 0.75rem; color: #999; margin-top: 20px; text-align: center; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Carboplatin 劑量計算器<br><span style="font-size:0.6em; color:#888;">Calvert Formula + 肥胖校正</span></h2>
+    
+    <div class="form-grid">
+        <div class="form-group">
+            <label>性別</label>
+            <select id="gender">
+                <option value="male">男性 (Male)</option>
+                <option value="female">女性 (Female)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>年齡 (Age)</label>
+            <input type="number" id="age" placeholder="歲">
+        </div>
+        
+        <div class="form-group">
+            <label>身高 (Height, cm)</label>
+            <input type="number" id="height" placeholder="公分" onchange="checkObesity()">
+        </div>
+        
+        <div class="form-group">
+            <label>體重 (Weight, kg)</label>
+            <input type="number" id="weight" step="0.1" placeholder="公斤" onchange="checkObesity()">
+        </div>
+
+        <div class="form-group full-width">
+            <label>血清肌酸酐 (Serum Cr, mg/dL)</label>
+            <input type="number" id="scr" step="0.01" placeholder="例如: 0.9">
+        </div>
+
+        <div class="form-group full-width">
+            <label>目標 AUC (Target AUC)</label>
+            <input type="number" id="auc" step="0.5" placeholder="例如: 5">
+        </div>
+    </div>
+
+    <div id="weight-alert" style="font-size: 0.85rem; color: #e67e22; margin-bottom: 10px; display: none;">
+        ⚠️ 偵測到肥胖 ( >120% IBW)，將自動使用 AdjBW 計算。
+    </div>
+
+    <button onclick="calculate()">計算劑量</button>
+
+    <div id="result" class="result-box">
+        <div class="highlight-row">
+            <span>計算用體重:</span>
+            <span id="usedWeightType" style="font-weight:bold;">實際體重</span>
+            <span id="usedWeightValue"></span>
+        </div>
+
+        <div class="result-row">
+            <span>原始估算 GFR (C-G):</span>
+            <span id="rawGfr">0 mL/min</span>
+        </div>
+        <div class="result-row">
+            <span>校正後 GFR (Cap at 125):</span>
+            <span id="cappedGfr" style="font-weight:bold; color:#28a745;">0 mL/min</span>
+        </div>
+        
+        <div class="final-dose-row">
+            <span class="final-label">建議總劑量:</span>
+            <span class="final-value" id="finalDose">0 mg</span>
+        </div>
+    </div>
+
+    <div class="disclaimer">
+        ⚠️ 免責聲明：
+        <br>1. 本工具僅供參考，計算結果務必由藥師或醫師覆核。
+        <br>2. 肥胖定義設定為超過理想體重(IBW)之 120%，此時使用調整體重(AdjBW 0.4)代入 C-G 公式。
+        <br>3. GFR 上限鎖定為 125 mL/min。
+    </div>
+</div>
+
+<script>
+    // 輔助功能：計算 IBW
+    function getIBW(gender, height) {
+        if (!height) return 0;
+        // Devine Formula
+        // 男性: 50 + 0.9 * (height - 152)
+        // 女性: 45.5 + 0.9 * (height - 152)
+        // 註：height in cm, constant 0.9 roughly equals 2.3 kg per inch
+        let base = (gender === 'male') ? 50 : 45.5;
+        let ibw = base + 0.9 * (height - 152);
+        return ibw > 0 ? ibw : 0;
+    }
+
+    // 輔助功能：計算 AdjBW
+    function getAdjBW(ibw, actualWeight) {
+        // AdjBW = IBW + 0.4 * (Actual - IBW)
+        return ibw + 0.4 * (actualWeight - ibw);
+    }
+
+    // UI互動：輸入身高體重時，提示使用者是否肥胖
+    function checkObesity() {
+        const gender = document.getElementById('gender').value;
+        const height = parseFloat(document.getElementById('height').value);
+        const weight = parseFloat(document.getElementById('weight').value);
+
+        if (height && weight) {
+            const ibw = getIBW(gender, height);
+            const alertBox = document.getElementById('weight-alert');
+            // 判斷是否超過 120% IBW
+            if (weight > ibw * 1.2) {
+                alertBox.style.display = 'block';
+                alertBox.innerText = `⚠️ 實際體重(${weight}kg) 超過理想體重(${ibw.toFixed(1)}kg) 120%，將自動使用 AdjBW 計算。`;
+            } else {
+                alertBox.style.display = 'none';
+            }
+        }
+    }
+
+    function calculate() {
+        const gender = document.getElementById('gender').value;
+        const age = parseFloat(document.getElementById('age').value);
+        const height = parseFloat(document.getElementById('height').value);
+        const weight = parseFloat(document.getElementById('weight').value);
+        const scr = parseFloat(document.getElementById('scr').value);
+        const auc = parseFloat(document.getElementById('auc').value);
+
+        if (!age || !height || !weight || !scr || !auc) {
+            alert("請填寫所有欄位以進行精確計算！");
+            return;
+        }
+
+        // 1. 決定使用哪一個體重 (Weight Logic)
+        const ibw = getIBW(gender, height);
+        let calcWeight = weight;
+        let weightTypeStr = "實際體重 (ABW)";
+
+        // 判斷邏輯：若實際體重 > 1.2 * IBW，使用 AdjBW
+        if (weight > ibw * 1.2) {
+            calcWeight = getAdjBW(ibw, weight);
+            weightTypeStr = "調整體重 (AdjBW)";
+        } else if (weight < ibw) {
+            // 補充：有些臨床指引建議若實際體重小於 IBW，直接用實際體重 (current code does this automatically)
+            // 這裡不做額外改變，維持 calcWeight = weight
+            weightTypeStr = "實際體重 (ABW)";
+        }
+
+        // 2. Cockcroft-Gault 公式
+        // ((140 - age) * Weight) / (72 * SCr)
+        let gfr = ((140 - age) * calcWeight) / (72 * scr);
+
+        if (gender === 'female') {
+            gfr = gfr * 0.85;
+        }
+
+        // 3. 顯示結果細節
+        document.getElementById('usedWeightType').innerText = weightTypeStr;
+        document.getElementById('usedWeightValue').innerText = `(${calcWeight.toFixed(1)} kg)`;
+        document.getElementById('rawGfr').innerText = gfr.toFixed(2) + " mL/min";
+
+        // 4. GFR Capping
+        let cappedGfr = gfr;
+        if (gfr > 125) {
+            cappedGfr = 125;
+        }
+        document.getElementById('cappedGfr').innerText = cappedGfr.toFixed(2) + " mL/min";
+
+        // 5. Calvert Formula
+        const dose = auc * (cappedGfr + 25);
+
+        document.getElementById('finalDose').innerText = Math.round(dose) + " mg";
+        document.getElementById('result').style.display = 'block';
+    }
+</script>
+
+</body>
+</html>
