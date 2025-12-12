@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Carboplatin Dose Calculator (Smart Weight)</title>
+    <title>Carboplatin Dose Calculator (GlobalRPH Logic)</title>
     <style>
         body {
             font-family: "Microsoft JhengHei", Arial, sans-serif;
@@ -19,7 +19,7 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
             width: 100%;
             max-width: 500px;
-            border-top: 5px solid #007bff;
+            border-top: 5px solid #d9534f; /* Changed color to distinguish version */
         }
         h2 {
             text-align: center;
@@ -46,7 +46,7 @@
         button {
             width: 100%;
             padding: 12px;
-            background-color: #007bff;
+            background-color: #d9534f;
             color: white;
             border: none;
             border-radius: 6px;
@@ -56,7 +56,7 @@
             transition: background 0.3s;
         }
         button:hover {
-            background-color: #0056b3;
+            background-color: #c9302c;
         }
         .result-box {
             margin-top: 25px;
@@ -64,7 +64,7 @@
             background-color: #e9ecef;
             border-radius: 8px;
             border-left: 5px solid #28a745;
-            display: none; /* Hidden by default */
+            display: none;
         }
         .result-item {
             margin-bottom: 10px;
@@ -108,7 +108,7 @@
 <body>
 
 <div class="container">
-    <h2>Carboplatin (AUC) 計算機</h2>
+    <h2>Carbo Calc (CrCl Round v2)</h2>
     
     <div class="form-group">
         <label>性別 (Gender)</label>
@@ -159,7 +159,7 @@
         <hr style="border: 0; border-top: 1px solid #ccc; margin: 10px 0;">
 
         <div class="result-item">
-            <span>CrCl (Cockcroft-Gault):</span>
+            <span>CrCl (Rounded):</span>
             <span id="res-crcl">-- mL/min</span>
         </div>
 
@@ -167,18 +167,17 @@
             <span>建議劑量 (Total Dose):</span>
             <span id="res-dose">-- mg</span>
         </div>
-        <div class="note" style="text-align: right;">Formula: AUC * (CrCl + 25)</div>
+        <div class="note" style="text-align: right;">Formula: AUC * (CrCl_rounded + 25)</div>
     </div>
 
     <div class="disclaimer">
-        ※ 注意：本工具僅供醫療專業人員參考。臨床用藥請依據病人實際狀況與醫院規範進行最終確認。<br>
+        ※ 更新：CrCl 計算後先四捨五入至小數點第一位，再代入公式。<br>
         邏輯：BMI > 25 使用 Adjusted BW，否則使用 Actual BW。
     </div>
 </div>
 
 <script>
     function calculateDose() {
-        // 1. 獲取輸入值
         const gender = document.getElementById('gender').value;
         const age = parseFloat(document.getElementById('age').value);
         const height = parseFloat(document.getElementById('height').value);
@@ -186,22 +185,16 @@
         const scr = parseFloat(document.getElementById('scr').value);
         const auc = parseFloat(document.getElementById('auc').value);
 
-        // 簡單驗證
         if (!age || !height || !actualWeight || !scr || !auc) {
             alert("請填寫所有欄位");
             return;
         }
 
-        // 2. 計算 BMI
+        // 1. BMI 計算
         const heightM = height / 100;
         const bmi = actualWeight / (heightM * heightM);
         
-        // 3. 計算 IBW (Devine formula)
-        // Male: 50 + 2.3 * (height_in_inches - 60)
-        // Female: 45.5 + 2.3 * (height_in_inches - 60)
-        // 這裡直接使用公分轉換： 1 inch = 2.54 cm, 60 inches = 152.4 cm
-        // 2.3 kg/inch 約等於 0.9055 kg/cm (通用簡化常以 0.9 計算，此處為了精確對齊 GlobalRPH 邏輯，使用英吋換算)
-        
+        // 2. IBW 計算
         const heightInches = height / 2.54;
         let ibw = 0;
         if (gender === 'male') {
@@ -210,42 +203,43 @@
             ibw = 45.5 + 2.3 * (heightInches - 60);
         }
 
-        // 4. 判斷使用體重 (您的核心需求)
+        // 3. 判斷使用體重
         let weightUsed = 0;
         let weightType = "";
         let logicHtml = "";
 
         if (bmi > 25) {
-            // 使用 Adjusted Body Weight
-            // Formula: IBW + 0.4 * (Actual - IBW)
             const adjBW = ibw + 0.4 * (actualWeight - ibw);
             weightUsed = adjBW;
             weightType = "Adjusted BW (BMI > 25)";
             logicHtml = `<span class="logic-badge badge-adjusted">使用調整體重</span> <br>IBW: ${ibw.toFixed(1)} kg | AdjBW: ${adjBW.toFixed(1)} kg`;
         } else {
-            // 使用 Actual Body Weight
             weightUsed = actualWeight;
             weightType = "Actual BW (BMI ≤ 25)";
             logicHtml = `<span class="logic-badge badge-actual">使用實際體重</span>`;
         }
 
-        // 5. 計算 CrCl (Cockcroft-Gault)
-        // Formula: ((140 - age) * Weight) / (72 * SCr)
-        // Female * 0.85
-        let crcl = ((140 - age) * weightUsed) / (72 * scr);
+        // 4. 計算原始 CrCl
+        let rawCrcl = ((140 - age) * weightUsed) / (72 * scr);
         if (gender === 'female') {
-            crcl = crcl * 0.85;
+            rawCrcl = rawCrcl * 0.85;
         }
 
-        // 6. 計算 Calvert Dose
-        // Dose = AUC * (CrCl + 25)
-        const totalDose = auc * (crcl + 25);
+        // 5. 【關鍵修正】CrCl 四捨五入到小數第一位 (Round to 1 decimal place)
+        // 這裡使用 Math.round(num * 10) / 10 的技巧
+        const roundedCrcl = Math.round(rawCrcl * 10) / 10;
+
+        // 6. 計算 Calvert Dose (使用 roundedCrcl)
+        const totalDose = auc * (roundedCrcl + 25);
 
         // 7. 顯示結果
         document.getElementById('res-bmi').innerText = bmi.toFixed(1);
         document.getElementById('res-weight-used').innerText = weightUsed.toFixed(1) + " kg";
         document.getElementById('weight-logic-note').innerHTML = `邏輯：${weightType}<br>${logicHtml}`;
-        document.getElementById('res-crcl').innerText = crcl.toFixed(2) + " mL/min";
+        
+        // 顯示四捨五入後的 CrCl，讓藥師確認數值與計算過程一致
+        document.getElementById('res-crcl').innerText = roundedCrcl.toFixed(1) + " mL/min"; 
+        
         document.getElementById('res-dose').innerText = Math.round(totalDose) + " mg";
 
         document.getElementById('resultBox').style.display = "block";
