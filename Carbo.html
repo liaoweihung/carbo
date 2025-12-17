@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Carboplatin Dose Calculator (GlobalRPH Logic)</title>
+    <title>Carboplatin Calculator (Safety Limits)</title>
     <style>
         body {
             font-family: "Microsoft JhengHei", Arial, sans-serif;
-            background-color: #f0f4f8;
+            background-color: #f4f6f9;
             display: flex;
             justify-content: center;
             padding: 20px;
@@ -16,15 +16,17 @@
             background-color: white;
             padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
             width: 100%;
             max-width: 500px;
-            border-top: 5px solid #d9534f; /* Changed color to distinguish version */
+            /* 紫色邊框代表 V3 進階版 */
+            border-top: 5px solid #6f42c1; 
         }
         h2 {
             text-align: center;
             color: #333;
             margin-bottom: 20px;
+            font-size: 1.5rem;
         }
         .form-group {
             margin-bottom: 15px;
@@ -46,7 +48,7 @@
         button {
             width: 100%;
             padding: 12px;
-            background-color: #d9534f;
+            background-color: #6f42c1;
             color: white;
             border: none;
             border-radius: 6px;
@@ -56,12 +58,12 @@
             transition: background 0.3s;
         }
         button:hover {
-            background-color: #c9302c;
+            background-color: #5a32a3;
         }
         .result-box {
             margin-top: 25px;
             padding: 20px;
-            background-color: #e9ecef;
+            background-color: #f8f9fa;
             border-radius: 8px;
             border-left: 5px solid #28a745;
             display: none;
@@ -71,30 +73,35 @@
             font-size: 16px;
             display: flex;
             justify-content: space-between;
+            align-items: center;
         }
         .result-item.highlight {
             font-weight: bold;
             color: #d9534f;
-            font-size: 1.2em;
+            font-size: 1.3em;
             border-top: 1px solid #ccc;
             padding-top: 10px;
             margin-top: 10px;
         }
         .note {
             font-size: 12px;
-            color: #777;
-            margin-top: 5px;
+            color: #6c757d;
+            margin-top: 2px;
+            text-align: right;
         }
-        .logic-badge {
+        .badge {
             display: inline-block;
-            padding: 4px 8px;
+            padding: 3px 6px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             color: white;
             font-weight: bold;
+            margin-left: 5px;
         }
-        .badge-actual { background-color: #17a2b8; }
-        .badge-adjusted { background-color: #ffc107; color: #333; }
+        .bg-info { background-color: #17a2b8; }
+        .bg-warning { background-color: #ffc107; color: #333; }
+        .bg-danger { background-color: #dc3545; }
+        
         .disclaimer {
             margin-top: 20px;
             font-size: 12px;
@@ -102,13 +109,14 @@
             text-align: center;
             border-top: 1px solid #eee;
             padding-top: 10px;
+            line-height: 1.6;
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Carbo Calc (CrCl Round v2)</h2>
+    <h2>Carboplatin (Safety Limits)</h2>
     
     <div class="form-group">
         <label>性別 (Gender)</label>
@@ -119,7 +127,7 @@
     </div>
 
     <div class="form-group">
-        <label>年齡 (Age) - 歲</label>
+        <label>年齡 (Age)</label>
         <input type="number" id="age" placeholder="例如: 65">
     </div>
 
@@ -135,67 +143,90 @@
 
     <div class="form-group">
         <label>血清肌酸酐 (SCr) - mg/dL</label>
-        <input type="number" id="scr" step="0.01" placeholder="例如: 0.9">
+        <input type="number" id="scr" step="0.01" placeholder="例如: 0.6">
     </div>
 
     <div class="form-group">
-        <label>目標 AUC (Target AUC)</label>
-        <input type="number" id="auc" value="5" placeholder="例如: 4, 5, 6">
+        <label>目標 AUC</label>
+        <input type="number" id="auc" value="5" placeholder="例如: 5">
     </div>
 
     <button onclick="calculateDose()">計算劑量 (Calculate)</button>
 
     <div id="resultBox" class="result-box">
         <div class="result-item">
-            <span>BMI:</span>
-            <span id="res-bmi">--</span>
+            <span>使用 SCr:</span>
+            <span>
+                <span id="res-scr-used">--</span>
+                <span id="scr-badge"></span>
+            </span>
         </div>
-        <div class="result-item">
-            <span>使用體重 (Weight Used):</span>
-            <span id="res-weight-used">--</span>
-        </div>
-        <div class="note" id="weight-logic-note"></div>
         
-        <hr style="border: 0; border-top: 1px solid #ccc; margin: 10px 0;">
+        <div class="result-item">
+            <span>使用體重 (Wt):</span>
+            <span>
+                <span id="res-weight-used">--</span>
+                <span id="weight-badge"></span>
+            </span>
+        </div>
 
         <div class="result-item">
             <span>CrCl (Rounded):</span>
-            <span id="res-crcl">-- mL/min</span>
+            <span>
+                <span id="res-crcl">--</span> mL/min
+                <span id="crcl-badge"></span>
+            </span>
         </div>
 
+        <hr style="border: 0; border-top: 1px solid #ccc; margin: 10px 0;">
+
         <div class="result-item highlight">
-            <span>建議劑量 (Total Dose):</span>
+            <span>總劑量 (Dose):</span>
             <span id="res-dose">-- mg</span>
         </div>
-        <div class="note" style="text-align: right;">Formula: AUC * (CrCl_rounded + 25)</div>
+        <div class="note">Formula: AUC * (Capped_CrCl + 25)</div>
     </div>
 
     <div class="disclaimer">
-        ※ 更新：CrCl 計算後先四捨五入至小數點第一位，再代入公式。<br>
-        邏輯：BMI > 25 使用 Adjusted BW，否則使用 Actual BW。
+        <strong>邏輯說明：</strong><br>
+        1. SCr < 0.7 以 0.7 計算。<br>
+        2. BMI > 25 使用 Adjusted BW，否則用 Actual BW。<br>
+        3. CrCl 超過 125 mL/min 以 125 計算 (Capped)。<br>
+        4. 結果顯示至小數點後第一位。
     </div>
 </div>
 
 <script>
     function calculateDose() {
+        // 1. 取得輸入
         const gender = document.getElementById('gender').value;
         const age = parseFloat(document.getElementById('age').value);
         const height = parseFloat(document.getElementById('height').value);
         const actualWeight = parseFloat(document.getElementById('weight').value);
-        const scr = parseFloat(document.getElementById('scr').value);
+        const rawScr = parseFloat(document.getElementById('scr').value);
         const auc = parseFloat(document.getElementById('auc').value);
 
-        if (!age || !height || !actualWeight || !scr || !auc) {
+        if (!age || !height || !actualWeight || !rawScr || !auc) {
             alert("請填寫所有欄位");
             return;
         }
 
-        // 1. BMI 計算
+        // --- 規則 1: SCr 修正 (Minimum SCr 0.7) ---
+        let usedScr = rawScr;
+        let scrBadgeHtml = "";
+        
+        if (rawScr < 0.7) {
+            usedScr = 0.7;
+            scrBadgeHtml = `<span class="badge bg-danger">修正 (原始 ${rawScr})</span>`;
+        } else {
+            scrBadgeHtml = `<span class="badge" style="color:#aaa; border:1px solid #ccc;">原始值</span>`;
+        }
+
+        // 2. BMI 與 體重邏輯
         const heightM = height / 100;
         const bmi = actualWeight / (heightM * heightM);
-        
-        // 2. IBW 計算
         const heightInches = height / 2.54;
+        
         let ibw = 0;
         if (gender === 'male') {
             ibw = 50 + 2.3 * (heightInches - 60);
@@ -203,44 +234,54 @@
             ibw = 45.5 + 2.3 * (heightInches - 60);
         }
 
-        // 3. 判斷使用體重
         let weightUsed = 0;
-        let weightType = "";
-        let logicHtml = "";
+        let weightBadgeHtml = "";
 
         if (bmi > 25) {
-            const adjBW = ibw + 0.4 * (actualWeight - ibw);
-            weightUsed = adjBW;
-            weightType = "Adjusted BW (BMI > 25)";
-            logicHtml = `<span class="logic-badge badge-adjusted">使用調整體重</span> <br>IBW: ${ibw.toFixed(1)} kg | AdjBW: ${adjBW.toFixed(1)} kg`;
+            weightUsed = ibw + 0.4 * (actualWeight - ibw);
+            weightBadgeHtml = `<span class="badge bg-warning">AdjBW (BMI>25)</span>`;
         } else {
             weightUsed = actualWeight;
-            weightType = "Actual BW (BMI ≤ 25)";
-            logicHtml = `<span class="logic-badge badge-actual">使用實際體重</span>`;
+            weightBadgeHtml = `<span class="badge bg-info">Actual (BMI≤25)</span>`;
         }
 
-        // 4. 計算原始 CrCl
-        let rawCrcl = ((140 - age) * weightUsed) / (72 * scr);
+        // 3. 計算 CrCl (Cockcroft-Gault)
+        // 注意：這裡分母使用 usedScr (修正後的 SCr)
+        let calcCrcl = ((140 - age) * weightUsed) / (72 * usedScr);
         if (gender === 'female') {
-            rawCrcl = rawCrcl * 0.85;
+            calcCrcl = calcCrcl * 0.85;
         }
 
-        // 5. 【關鍵修正】CrCl 四捨五入到小數第一位 (Round to 1 decimal place)
-        // 這裡使用 Math.round(num * 10) / 10 的技巧
-        const roundedCrcl = Math.round(rawCrcl * 10) / 10;
+        // 四捨五入到小數第一位
+        let roundedCrcl = Math.round(calcCrcl * 10) / 10;
 
-        // 6. 計算 Calvert Dose (使用 roundedCrcl)
-        const totalDose = auc * (roundedCrcl + 25);
+        // --- 規則 2: CrCl 封頂 (Max 125) ---
+        let finalCrCl = roundedCrcl;
+        let crclBadgeHtml = "";
 
-        // 7. 顯示結果
-        document.getElementById('res-bmi').innerText = bmi.toFixed(1);
-        document.getElementById('res-weight-used').innerText = weightUsed.toFixed(1) + " kg";
-        document.getElementById('weight-logic-note').innerHTML = `邏輯：${weightType}<br>${logicHtml}`;
-        
-        // 顯示四捨五入後的 CrCl，讓藥師確認數值與計算過程一致
-        document.getElementById('res-crcl').innerText = roundedCrcl.toFixed(1) + " mL/min"; 
-        
-        document.getElementById('res-dose').innerText = Math.round(totalDose) + " mg";
+        if (roundedCrcl > 125) {
+            finalCrCl = 125;
+            crclBadgeHtml = `<span class="badge bg-danger">封頂 (原 ${roundedCrcl})</span>`;
+        }
+
+        // 4. 計算 Dose
+        // Formula: AUC * (CrCl + 25)
+        const totalDose = auc * (finalCrCl + 25);
+
+        // --- 規則 3: 結果顯示到小數第一位 ---
+        const displayDose = totalDose.toFixed(1);
+
+        // 5. 更新 UI
+        document.getElementById('res-scr-used').innerText = usedScr;
+        document.getElementById('scr-badge').innerHTML = scrBadgeHtml;
+
+        document.getElementById('res-weight-used').innerText = weightUsed.toFixed(1);
+        document.getElementById('weight-badge').innerHTML = weightBadgeHtml;
+
+        document.getElementById('res-crcl').innerText = finalCrCl; // 這裡顯示最終用於計算的數值
+        document.getElementById('crcl-badge').innerHTML = crclBadgeHtml;
+
+        document.getElementById('res-dose').innerText = displayDose + " mg";
 
         document.getElementById('resultBox').style.display = "block";
     }
